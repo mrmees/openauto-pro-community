@@ -1,0 +1,541 @@
+#!/usr/bin/env python3
+
+"""
+* Copyright 2020 BlueWave Studio
+* All Rights Reserved
+*
+* The information contained herein is confidential property of BlueWave Studio.
+* The use, copying, transfer or disclosure of such information is prohibited
+* except by express written agreement with BlueWave Studio.
+*
+* Contact information:
+* Web site:         www.bluewavestudio.io
+* e-mail:           contact@bluewavestudio.io
+*
+* Product:          OpenAuto Pro
+
+OAP: enable/disable RPI hotspot
+# g - IEEE 802.11g (2.4 GHz), b - IEEE 802.11b (2.4 GHz), a - IEEE 802.11a (5 GHz)
+"""
+from shutil import copyfile, move
+import os
+import re
+import sys
+from subprocess import CalledProcessError, check_call
+
+
+# Script parameters
+# g - IEEE 802.11g (2.4 GHz), b - IEEE 802.11b (2.4 GHz), a - IEEE 802.11a (5 GHz)
+hotspot_params = {
+    "WPA_SUPPLICANT_FILE_PATH"    : r"/etc/wpa_supplicant/wpa_supplicant.conf",
+    "DHCPCD_CONFIG_FILE_PATH"     : r"/etc/dhcpcd.conf",
+    "DNSMASQ_CONFIG_FILE_PATH"    : r"/etc/dnsmasq.conf",
+    "HOSTAPD_CONFIG_FILE_PATH"    : r"/etc/hostapd/hostapd.conf",
+    "HOSTAPD_DEFAULT_FILE_PATH"   : r"/etc/default/hostapd",
+    "HOSTAPD_CHANNEL"             : {"a": 36, "b": 7, "g": 7},
+    "HOTSPOT_INTERFACE"           : r"wlan0",
+    "HOTSPOT_IP_WITH_LEASE_TIME"  : r"192.168.4.1/24",
+    "HOTSPOT_DHCPCD_RANGE"        : r"192.168.4.2,192.168.4.20,255.255.255.0,24h",
+    "SSID_MAX_SIZE"               : 32,
+    "SSID_VALIDATION_REGEXP"      : r"^[A-Za-z0-9]+$",
+    "SSID_PASSWD_MIN_SIZE"        : 8,      # Should at least fulfill WPA-PSK constraints
+    "SSID_PASSWD_MAX_SIZE"        : 63,     # Should at least fulfill WPA-PSK constraints
+    "WLAN_DEV_NO"                 : 0       # Can get from sudo rfkill list all command
+}
+
+# Constants
+E_SUCCESS                       = 0
+E_NO_FILE                       = 1
+E_CAN_NOT_READ_FILE             = 2
+E_CAN_NOT_WRITE_FILE            = 3
+E_FILE_CONTENT_MISMATCH         = 4
+E_WRONG_SCRIPT_ARGS             = 5
+
+RESTORE_TOKEN                   = ".hotspot.orig"
+
+# global const variables
+SCRIPT_MIN_ARG_LEN                = 2
+SCRIPT_ENABLE_ARG_LEN             = 5
+SCRIPT_CMD                        = 1
+SCRIPT_SSID_NAME                  = 2
+SCRIPT_SSID_KEY                   = 3
+SCRIPT_HW_MODE                    = 4
+
+class Process:
+    def run(self, arg_list):
+        returncode = E_SUCCESS
+        try:
+            check_call(arg_list)
+        except CalledProcessError as e:
+            returncode = e.returncode
+
+        return returncode
+
+class Dhcpcd:
+    def __init__(self, config_file_path, interface, static_ip_addr_with_lease):
+        self.config_file_path   = config_file_path
+        self.interface          = interface
+        self.static_ip_addr     = static_ip_addr_with_lease
+
+        self.CFG_REGEXP_FROM =           \
+            "interface.*\s"           +  \
+            "    static.*ip_address=.*\s" +  \
+            "    nohook.*wpa_supplicant.*"
+
+        self.CFG_REGEXP_TO =                                                \
+            "interface "             + str(self.interface)      + "\n" +  \
+            "    static ip_address=" + str(self.static_ip_addr) + "\n" +  \
+            "    nohook wpa_supplicant"
+
+    def make_backup(self):
+        if not os.path.exists(self.config_file_path):
+            return E_NO_FILE
+
+        if os.path.exists(self.config_file_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            copyfile(self.config_file_path, self.config_file_path + RESTORE_TOKEN)
+            os.sync()
+        except Exception as e:
+            print("Dhcpcd.make_backup(): Error unable to copy file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def restore_backup(self):
+        if not os.path.exists(self.config_file_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            os.replace(self.config_file_path + RESTORE_TOKEN, self.config_file_path)
+        except Exception as e:
+            print("Dhcpcd.restore_backup(): Error unable to replace the file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def update_config(self, config_content):
+        config_content, n = re.subn(
+            self.CFG_REGEXP_FROM,
+            self.CFG_REGEXP_TO,
+            config_content
+        )
+
+        if (n <= 0):
+            print("Dhcpcd.update_config() Error: 0 regexp matchs")
+            return None
+
+        return config_content
+
+    def add_config(self, config_content):
+        config_content += "\r\n" + self.CFG_REGEXP_TO + "\r\n"
+        return config_content
+
+    def configure(self):
+        ret = self.make_backup()
+        if (ret != 0):
+            print("Dhcpcd.configure() Error during make_backup()")
+            return ret
+
+        config_content = None
+        if not os.path.exists(self.config_file_path):
+            return E_NO_FILE
+
+        with open(self.config_file_path, 'r') as f:
+            try:
+                config_content = f.read()
+            except Exception as e:
+                print("Dhcpcd.configure() Error during config file reading: ")
+                print(e)
+                return E_CAN_NOT_READ_FILE
+
+        if (config_content == None):
+            print("Dhcpcd.configure() Error during config file reading")
+            return E_CAN_NOT_READ_FILE
+
+        if (self.interface in config_content):
+            config_content = self.update_config(config_content)
+        else:
+            config_content = self.add_config(config_content)
+
+        if config_content == None:
+            return E_FILE_CONTENT_MISMATCH
+
+        with open(self.config_file_path, 'w') as f:
+            try:
+                f.write(config_content)
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception as e:
+                print("Dhcpcd.configure() Error during config file writing: ")
+                print(e)
+                return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+class Hostapd():
+    def __init__(self, config_path, hostapd_path, channel_map, interface):
+        self.config_path            = config_path
+        self.hostapd_path           = hostapd_path
+        self.channel_map            = channel_map
+        self.config_content_format  =                 \
+                "interface=" + interface +     "\n" + \
+                "driver=nl80211\n"                  + \
+                "ssid={}\n"                         + \
+                "hw_mode={}\n"                      + \
+                "channel={}\n"                      + \
+                "wmm_enabled=0\n"                   + \
+                "macaddr_acl=0\n"                   + \
+                "auth_algs=1\n"                     + \
+                "ignore_broadcast_ssid=0\n"         + \
+                "wpa=2\n"                           + \
+                "wpa_passphrase={}\n"               + \
+                "wpa_key_mgmt=WPA-PSK\n"            + \
+                "wpa_pairwise=TKIP\n"               + \
+                "rsn_pairwise=CCMP"
+        self.DAEMON_CONF_REGISTER_FROM = "DAEMON_CONF=\".*\""
+        self.DAEMON_CONF_REGISTER_TO   = "DAEMON_CONF=\"/etc/hostapd/hostapd.conf\""
+
+    def make_backup(self):
+        if not os.path.exists(self.hostapd_path):
+            return E_NO_FILE
+
+        if os.path.exists(self.hostapd_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            copyfile(self.hostapd_path, self.hostapd_path + RESTORE_TOKEN)
+            os.sync()
+        except Exception as e:
+            print("Hostapd.make_backup(): Error unable to copy file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def restore_backup(self):
+        if not os.path.exists(self.hostapd_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            os.replace(self.hostapd_path + RESTORE_TOKEN, self.hostapd_path)
+        except Exception as e:
+            print("Hostapd.restore_backup(): Error unable to replace the file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def update_default_file(self):
+        default_file_content = None
+        if not os.path.exists(self.hostapd_path):
+            return E_NO_FILE
+
+        with open(self.hostapd_path, 'r') as f:
+            try:
+                default_file_content = f.read()
+            except Exception as e:
+                print("Hostapd.update_default_file() Error during default file reading: ")
+                print(e)
+                return E_CAN_NOT_READ_FILE
+
+        if (default_file_content == None):
+            print("Hostapd.update_default_file() Error during default file reading")
+            return E_CAN_NOT_READ_FILE
+
+        default_file_content, n = re.subn(
+            self.DAEMON_CONF_REGISTER_FROM,
+            self.DAEMON_CONF_REGISTER_TO,
+            default_file_content
+        )
+
+        if (n <= 0):
+            print("Hostapd.update_default_file() Error: 0 regexp matchs")
+            return E_FILE_CONTENT_MISMATCH
+
+        with open(self.hostapd_path, 'w') as f:
+            try:
+                f.write(default_file_content)
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception as e:
+                print("Hostapd.update_default_file() Error during default file writing: ")
+                print(e)
+                return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def configure(self, ssid_name, ssid_key, hw_mode):
+        ret = self.make_backup()
+        if (ret != 0):
+            print("Hostapd.configure() Error during preparing backup")
+            return ret
+
+        with open(self.config_path, 'w') as f:
+            try:
+                config_content = self.config_content_format.format(ssid_name, hw_mode, self.channel_map[hw_mode], ssid_key)
+                f.write(config_content)
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception as e:
+                print("Hostapd.configure() Error during writing config file")
+                print(e)
+                return E_CAN_NOT_WRITE_FILE
+
+        ret = self.update_default_file()
+        if (ret != 0):
+            print("Hostapd.configure() Error during updating default file")
+            return ret
+
+        return E_SUCCESS
+
+class Systemctl:
+    def __init__(self):
+        self.proc_name = r"systemctl"
+        return
+
+    def command(self, cmd_type, service_name):
+        returncode = Process().run([self.proc_name, cmd_type, service_name])
+        if (returncode != E_SUCCESS):
+            print(
+                "Systemctl.command() Error for cmd_type:= " +
+                cmd_type                                    +
+                " service_name:= "                          +
+                service_name                                +
+                " returncode:= "                            +
+                str(returncode)
+            )
+
+        return returncode
+
+class Dnsmasq:
+    def __init__(self, dnsmasq_path, interface, dhcp_range):
+        self.dnsmasq_path = dnsmasq_path
+        self.interface = interface
+        self.dhcp_range = dhcp_range
+        self.config_content_format = "interface={} \r\ndhcp-range={}"
+
+    def make_backup(self):
+        if not os.path.exists(self.dnsmasq_path):
+            return E_NO_FILE
+
+        if os.path.exists(self.dnsmasq_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            copyfile(self.dnsmasq_path, self.dnsmasq_path + RESTORE_TOKEN)
+            os.sync()
+        except Exception as e:
+            print("Dnsmasq.make_backup(): Error unable to copy file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def restore_backup(self):
+        if not os.path.exists(self.dnsmasq_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            os.replace(self.dnsmasq_path + RESTORE_TOKEN, self.dnsmasq_path)
+        except Exception as e:
+            print("Dnsmasq.restore_backup(): Error unable to replace the file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def configure(self):
+        ret = self.make_backup()
+        if (ret != 0):
+            print("Dnsmasq.configure() Error during preparing backup")
+            return ret
+
+        with open(self.dnsmasq_path, 'w') as f:
+            try:
+                config_content = self.config_content_format.format(self.interface, self.dhcp_range)
+                f.write(config_content)
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception as e:
+                print("Dnsmasq.configure() Error during writing config file")
+                print(e)
+                return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+class WPA:
+    def __init__(self, config_path):
+        self.config_path            = config_path
+        self.NETWORK_REGEXP_FROM    = r"network.*=.*{[\s\S]*?}"
+        self.NETWORK_REGEXP_TO      = r""
+
+    def make_backup(self):
+        if not os.path.exists(self.config_path):
+            return E_NO_FILE
+
+        if os.path.exists(self.config_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            move(self.config_path, self.config_path + RESTORE_TOKEN)
+        except Exception as e:
+            print("WPA.make_backup(): Error unable to copy file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def restore_backup(self):
+        if not os.path.exists(self.config_path + RESTORE_TOKEN):
+            return E_SUCCESS
+
+        try:
+            move(self.config_path + RESTORE_TOKEN, self.config_path)
+        except Exception as e:
+            print("WPA.restore_backup(): Error unable to replace the file")
+            print(e)
+            return E_CAN_NOT_WRITE_FILE
+
+        return E_SUCCESS
+
+    def configure(self):
+        ret = self.make_backup()
+        if (ret != 0):
+            print("WPA.configure() Error during preparing backup")
+            return ret
+
+        return E_SUCCESS
+
+class Hotspot:
+    def __init__(self, p):
+        self.ssid_max_size          = p["SSID_MAX_SIZE"]
+        self.ssid_validation_regexp = p["SSID_VALIDATION_REGEXP"]
+        self.ssid_passwd_min_size   = p["SSID_PASSWD_MIN_SIZE"]
+        self.ssid_passwd_max_size   = p["SSID_PASSWD_MAX_SIZE"]
+        self.dev_no                 = p["WLAN_DEV_NO"]
+        self.params                 = p
+        self.systemctl              = Systemctl()
+
+        self.dhcpcd = Dhcpcd(
+            p["DHCPCD_CONFIG_FILE_PATH"],
+            p["HOTSPOT_INTERFACE"],
+            p["HOTSPOT_IP_WITH_LEASE_TIME"]
+        )
+
+        self.dnsmasq = Dnsmasq(
+            p["DNSMASQ_CONFIG_FILE_PATH"],
+            p["HOTSPOT_INTERFACE"],
+            p["HOTSPOT_DHCPCD_RANGE"]
+        )
+
+        self.hostapd = Hostapd(
+            p["HOSTAPD_CONFIG_FILE_PATH"],
+            p["HOSTAPD_DEFAULT_FILE_PATH"],
+            p["HOSTAPD_CHANNEL"],
+            p["HOTSPOT_INTERFACE"]
+        )
+
+        self.WPA = WPA(
+            p["WPA_SUPPLICANT_FILE_PATH"]
+        )
+
+    def check_enable_params(self, SSID, KEY, HW_MODE):
+        if (len(SSID) > self.ssid_max_size):
+            print("Hotspot.check_enable_params() Error: SSID_NAME is too long")
+            return E_WRONG_SCRIPT_ARGS
+
+        if (len(KEY) > self.ssid_passwd_max_size or len(KEY) < self.ssid_passwd_min_size):
+            print("Hotspot.check_enable_params() Error: SSID_KEY is not within length limits")
+            return E_WRONG_SCRIPT_ARGS
+
+        if (HW_MODE != 'g' and HW_MODE != 'b' and HW_MODE != 'a'):
+            print("Hotspot.check_enable_params() Error: HW_MODE:= " + str(HW_MODE) + " is not supported")
+            return E_WRONG_SCRIPT_ARGS
+
+        match = re.match(
+            self.ssid_validation_regexp,
+            SSID
+        )
+
+        if match:
+            return E_SUCCESS
+        else:
+            print("Hotspot.check_enable_params() Error: invalid SSID - regex fail")
+            return E_WRONG_SCRIPT_ARGS
+
+    def enable(self, SSID, KEY, HW_MODE):
+        if (self.check_enable_params(SSID, KEY, HW_MODE) != E_SUCCESS):
+            return
+
+        self.systemctl.command("stop", "wpa_supplicant")
+        self.systemctl.command("disable", "wpa_supplicant")
+        self.systemctl.command("mask", "wpa_supplicant")
+
+        Process().run(["pkill", "wpa_supplicant"])
+
+        self.WPA.configure()
+        self.dhcpcd.configure()
+
+        self.dnsmasq.configure()
+        self.hostapd.configure(SSID, KEY, HW_MODE)
+
+        self.systemctl.command("unmask", "dnsmasq")
+        self.systemctl.command("enable", "dnsmasq")
+        self.systemctl.command("start", "dnsmasq")
+
+        self.systemctl.command("unmask", "hostapd")
+        self.systemctl.command("enable", "hostapd")
+        self.systemctl.command("start", "hostapd")
+
+
+    def disable(self):
+        self.systemctl.command("stop", "dnsmasq")
+        self.systemctl.command("disable", "dnsmasq")
+        self.systemctl.command("mask", "dnsmasq")
+
+        self.systemctl.command("stop", "hostapd")
+        self.systemctl.command("disable", "hostapd")
+        self.systemctl.command("mask", "hostapd")
+
+        self.WPA.restore_backup()
+        self.dhcpcd.restore_backup()
+        self.dnsmasq.restore_backup()
+        self.hostapd.restore_backup()
+
+        self.systemctl.command("unmask", "wpa_supplicant")
+        self.systemctl.command("enable", "wpa_supplicant")
+        self.systemctl.command("start", "wpa_supplicant")
+        self.systemctl.command("restart", "dhcpcd")
+
+def main(argv):
+    # Sanity check
+    if (len(argv) < SCRIPT_MIN_ARG_LEN):
+        print("main() Error - wrong args")
+        print("hotspot.py enable <SSID_NAME> <SSID_KEY> <HW_MODE>")
+        print("hotspot.py disable")
+        sys.exit(E_WRONG_SCRIPT_ARGS)
+
+    cmd = argv[SCRIPT_CMD]
+    ret = E_SUCCESS
+    if (cmd == "enable"):
+        if (len(argv) < SCRIPT_ENABLE_ARG_LEN):
+            print("main() Error - wrong args for enable command")
+            sys.exit(E_WRONG_SCRIPT_ARGS)
+
+        hotspot = Hotspot(hotspot_params)
+        hotspot.enable(argv[SCRIPT_SSID_NAME], argv[SCRIPT_SSID_KEY], argv[SCRIPT_HW_MODE])
+    elif (cmd == "disable"):
+        hotspot = Hotspot(hotspot_params)
+        hotspot.disable()
+    else:
+        print("main() Error - wrong command:= " + cmd)
+        ret = E_WRONG_SCRIPT_ARGS
+
+    sys.exit(ret)
+
+if __name__ == "__main__":
+    main(sys.argv)

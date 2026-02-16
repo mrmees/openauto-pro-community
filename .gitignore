@@ -1,0 +1,25 @@
+# Binaries (too large for git, not redistributable)
+*.elf
+*.bin
+*.so
+*.img
+
+# Build artifacts
+build/
+*.o
+*.d
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/

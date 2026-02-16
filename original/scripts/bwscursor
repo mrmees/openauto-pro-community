@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""
+* Copyright 2019 BlueWave Studio
+* All Rights Reserved
+*
+* The information contained herein is confidential property of BlueWave Studio.
+* The use, copying, transfer or disclosure of such information is prohibited
+* except by express written agreement with BlueWave Studio.
+*
+* Contact information:
+* Web site:         www.bluewavestudio.io
+* e-mail:           contact@bluewavestudio.io
+*
+* Product:          OpenAuto Pro
+
+OAP: switch show/hide mouse cursor
+
+sudo python3 bwscursor show
+sudo python3 bwscursor hide
+
+/home/pi/Downloads/
+
+"""
+
+import os
+import sys
+import fileinput
+
+MOUSE_SHOW = 'show'
+MOUSE_HIDE = 'hide'
+
+file_path = '/etc/lightdm/lightdm.conf'
+mode_to_set = ''
+
+
+def restart_rpi():
+    input('\nSystem will restart. Press ENTER to Continue...')
+    os.system('sudo shutdown -r now')
+
+
+print('This script will update RPI settings for hide/show mouse cursor. RPI will be restarted.\n')
+
+try:
+    variant_arg = sys.argv[1:]
+    if len(variant_arg) != 1:
+        print("Arguments error. Action terminated. ")
+        sys.exit(1)
+
+    if variant_arg[0].lower() == MOUSE_SHOW or variant_arg[0].lower() == MOUSE_HIDE:
+        print("Configuration for mouse " + variant_arg[0].lower() + " in progress.")
+        mode_to_set = variant_arg[0].lower()
+    else:
+        print("Wrong choice. Action terminated. ")
+        sys.exit()
+
+    if not os.path.isfile(file_path):
+        print("Configuration file does not exist. Action terminated.")
+        sys.exit()
+
+except ValueError:
+    print("Wrong choice")
+
+try:
+    fileConfig = open(file_path, 'r')
+    content = fileConfig.readlines()
+    fileConfig.close()
+
+    founded = False
+    text = 'xserver-command=X'
+
+    for i in range(len(content)):
+        if text in content[i]:
+            if mode_to_set == MOUSE_HIDE:
+                content[i] = text + ' -nocursor' + '\n'
+            elif mode_to_set == MOUSE_SHOW:
+                content[i] = text + '\n'
+            else:
+                print(text + ' not founded.')
+                raise Exception
+            founded = True
+            break
+
+    if not founded:
+        print('Error. Cannot change file.')
+
+    with open(file_path, 'w') as file:
+        file.writelines(content)
+    print('System configuration has been updated')
+    file.close()
+    restart_rpi()
+
+except Exception:
+    print('Error. Cannot change file. Perform action manually.')

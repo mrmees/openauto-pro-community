@@ -1,0 +1,308 @@
+syntax = "proto2";
+
+package io.bluewavestudio.openautopro.api;
+
+message Version {
+    required int32 major = 1;
+    required int32 minor = 2;
+}
+
+message HelloRequest {
+    required string name = 1;
+    required io.bluewavestudio.openautopro.api.Version api_version = 2;
+}
+
+message HelloResponse {
+    enum HelloResponseResult {
+        HELLO_RESPONSE_RESULT_OK = 1;
+        HELLO_RESPONSE_RESULT_VERSION_MISMATCH = 2;
+        HELLO_RESPONSE_RESULT_UNKNOWN_ERROR = 3;
+    }
+
+    required io.bluewavestudio.openautopro.api.Version oap_version = 1;
+    required io.bluewavestudio.openautopro.api.Version api_version = 2;
+    required io.bluewavestudio.openautopro.api.HelloResponse.HelloResponseResult result = 3;
+}
+
+message SetStatusSubscriptions {
+    enum Subscription {
+        PROJECTION = 1;
+        MEDIA = 2;
+        NAVIGATION = 3;
+        OBD = 4;
+        PHONE = 5;
+        TEMPERATURE = 6;
+    }
+
+    repeated io.bluewavestudio.openautopro.api.SetStatusSubscriptions.Subscription subscriptions = 1;
+}
+
+message SetReverseGearStatus {
+    required bool engaged = 1;
+}
+
+message ProjectionStatus {
+    enum ProjectionState {
+        PROJECTION_STATE_INACTIVE = 1;
+        PROJECTION_STATE_FOREGROUND = 2;
+        PROJECTION_STATE_BACKGROUND = 3;
+    }
+
+    enum ProjectionSource {
+        PROJECTION_SOURCE_NONE = 0;
+        PROJECTION_SOURCE_ANDROID_AUTO = 1;
+        PROJECTION_SOURCE_AUTOBOX = 2;
+        PROJECTION_SOURCE_MIRRORING = 3;
+    }
+
+    required io.bluewavestudio.openautopro.api.ProjectionStatus.ProjectionState state = 1;
+    required io.bluewavestudio.openautopro.api.ProjectionStatus.ProjectionSource source = 2;
+}
+
+message MediaStatus {
+    enum MediaSource {
+        MEDIA_SOURCE_NONE = 0;
+        MEDIA_SOURCE_ANDROID_AUTO = 1;
+        MEDIA_SOURCE_AUTOBOX = 2;
+        MEDIA_SOURCE_A2DP = 3;
+        MEDIA_SOURCE_STORAGE = 4;
+        MEDIA_SOURCE_FM_RADIO = 5;
+    }
+
+    required string position_label = 1;
+    required bool is_playing = 2;
+    required io.bluewavestudio.openautopro.api.MediaStatus.MediaSource source = 3;
+}
+
+message MediaMetadata {
+    required string album = 1;
+    required string artist = 2;
+    required string title = 3;
+    required string duration_label = 4;
+}
+
+message NavigationStatus {
+    enum NavigationSource {
+        NAVIGATION_SOURCE_NONE = 0;
+        NAVIGATION_SOURCE_ANDROID_AUTO = 1;
+    }
+
+    enum NavigationState {
+        NAVIGATION_STATE_ACTIVE = 1;
+        NAVIGATION_STATE_INACTIVE = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.NavigationStatus.NavigationSource source = 1;
+    required io.bluewavestudio.openautopro.api.NavigationStatus.NavigationState state = 2;
+}
+
+message NavigationManeuverDetails {
+    required string description = 1;
+    required bytes icon = 2;
+}
+
+message NavigationManeuverDistance {
+    required string label = 1;
+}
+
+message RegisterStatusIconRequest {
+    required string name = 1;
+    required string description = 2;
+    required bytes icon = 3;
+}
+
+message RegisterStatusIconResponse {
+    enum RegisterStatusIconResult {
+        REGISTER_STATUS_ICON_RESULT_OK = 1;
+        REGISTER_STATUS_ICON_RESULT_FAILED = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.RegisterStatusIconResponse.RegisterStatusIconResult result = 1;
+    optional int32 id = 2;
+}
+
+message UnregisterStatusIcon {
+    required int32 id = 1;
+}
+
+message ChangeStatusIconState {
+    required int32 id = 1;
+    required bool visible = 2;
+}
+
+message RegisterNotificationChannelRequest {
+    required string name = 1;
+    required string description = 2;
+}
+
+message RegisterNotificationChannelResponse {
+    enum RegisterNotificationChannelResult {
+        REGISTER_NOTIFICATION_CHANNEL_RESULT_OK = 1;
+        REGISTER_NOTIFICATION_CHANNEL_RESULT_FAILED = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.RegisterNotificationChannelResponse.RegisterNotificationChannelResult result = 1;
+    optional int32 id = 2;
+}
+
+message UnregisterNotificationChannel {
+    required int32 id = 1;
+}
+
+message ShowNotification {
+    required int32 channel_id = 1;
+    required string title = 2;
+    required string description = 3;
+    required string single_line = 4;
+    required bytes icon = 5;
+    optional bytes sound_pcm = 6;
+}
+
+message ObdInjectGaugeFormulaValue {
+    required string formula = 1;
+    required double value = 2;
+}
+
+message ObdConnectionStatus {
+    enum ObdConnectionState {
+        OBD_CONNECTION_STATE_CONNECTED = 1;
+        OBD_CONNECTION_STATE_DISCONNECTED = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.ObdConnectionStatus.ObdConnectionState state = 1;
+}
+
+message SubscribeObdGaugeChangeRequest {
+    required int32 gauge_index = 1;
+}
+
+message SubscribeObdGaugeChangeResponse {
+    enum SubscribeObdGaugeChangeResult {
+        SUBSCRIBE_OBD_GAUGE_CHANGE_RESULT_OK = 1;
+        SUBSCRIBE_OBD_GAUGE_CHANGE_RESULT_ALREADY_SUBSCRIBED = 2;
+        SUBSCRIBE_OBD_GAUGE_CHANGE_RESULT_FAILED = 3;
+    }
+
+    required io.bluewavestudio.openautopro.api.SubscribeObdGaugeChangeResponse.SubscribeObdGaugeChangeResult result = 1;
+    optional int32 gauge_index = 2;
+    optional string label = 3;
+    optional double min_value = 4;
+    optional double max_value = 5;
+    optional double min_limit = 6;
+    optional double max_limit = 7;
+    optional int32 precision = 8;
+}
+
+message UnsubscribeObdGaugeChange {
+    required int32 gauge_index = 1;
+}
+
+message ObdGaugeValueChanged {
+    required int32 gauge_index = 1;
+    required double value = 2;
+}
+
+message RegisterAudioFocusReceiverRequest {
+    enum AudioStreamCategory {
+        AUDIO_STREAM_CATEGORY_ENTERTAINMENT = 1;
+        AUDIO_STREAM_CATEGORY_COMMUNICATION = 2;
+    }
+
+    required string name = 1;
+    required io.bluewavestudio.openautopro.api.RegisterAudioFocusReceiverRequest.AudioStreamCategory category = 2;
+}
+
+message RegisterAudioFocusReceiverResponse {
+    enum RegisterAudioFocusReceiverResult {
+        REGISTER_AUDIO_FOCUS_RECEIVER_RESULT_OK = 1;
+        REGISTER_AUDIO_FOCUS_RECEIVER_RESULT_FAILED = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.RegisterAudioFocusReceiverResponse.RegisterAudioFocusReceiverResult result = 1;
+    optional int32 id = 2;
+}
+
+message UnregisterAudioFocusReceiver {
+    required int32 id = 1;
+}
+
+message AudioFocusChangeRequest {
+    enum AudioFocusType {
+        AUDIO_FOCUS_TYPE_GAIN = 1;
+        AUDIO_FOCUS_TYPE_TRANSIENT = 2;
+        AUDIO_FOCUS_TYPE_DUCK = 3;
+        AUDIO_FOCUS_TYPE_RELEASE = 4;
+    }
+
+    required int32 id = 1;
+    required io.bluewavestudio.openautopro.api.AudioFocusChangeRequest.AudioFocusType type = 2;
+}
+
+message AudioFocusChangeResponse {
+    required int32 id = 1;
+    required bool result = 2;
+}
+
+message AudioFocusAction {
+    enum AudioFocusActionType {
+        AUDIO_FOCUS_ACTION_TYPE_SUSPEND = 1;
+        AUDIO_FOCUS_ACTION_TYPE_RESTORE = 2;
+        AUDIO_FOCUS_ACTION_TYPE_LOSS = 3;
+        AUDIO_FOCUS_ACTION_TYPE_DUCK_START = 4;
+        AUDIO_FOCUS_ACTION_TYPE_DUCK_END = 5;
+    }
+
+    enum LostAudioFocusType {
+        LOST_AUDIO_FOCUS_TYPE_GAIN = 1;
+        LOST_AUDIO_FOCUS_TYPE_TRANSIENT = 2;
+        LOST_AUDIO_FOCUS_TYPE_DUCK = 3;
+    }
+
+    required int32 id = 1;
+    required io.bluewavestudio.openautopro.api.AudioFocusAction.AudioFocusActionType action = 2;
+    optional io.bluewavestudio.openautopro.api.AudioFocusAction.LostAudioFocusType lost_type = 3;
+}
+
+message AudioFocusMediaKey {
+    enum AudioFocusMediaKeyEventType {
+        AUDIO_FOCUS_MEDIA_KEY_EVENT_TYPE_NONE = 0;
+        AUDIO_FOCUS_MEDIA_KEY_EVENT_TYPE_PRESS = 1;
+        AUDIO_FOCUS_MEDIA_KEY_EVENT_TYPE_RELEASE = 2;
+    }
+
+    enum AudioFocusMediaKeyType {
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_NONE = 0;
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_PLAY = 1;
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_PAUSE = 2;
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_PREVIOUS = 3;
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_NEXT = 4;
+        AUDIO_FOCUS_MEDIA_KEY_TYPE_TOGGLE_PLAY = 5;
+    }
+
+    required int32 id = 1;
+    required io.bluewavestudio.openautopro.api.AudioFocusMediaKey.AudioFocusMediaKeyEventType event_type = 2;
+    required io.bluewavestudio.openautopro.api.AudioFocusMediaKey.AudioFocusMediaKeyType key_type = 3;
+}
+
+message PhoneConnectionStatus {
+    enum PhoneConnectionState {
+        PHONE_CONNECTION_STATE_CONNECTED = 1;
+        PHONE_CONNECTION_STATE_DISCONNECTED = 2;
+    }
+
+    required io.bluewavestudio.openautopro.api.PhoneConnectionStatus.PhoneConnectionState state = 1;
+    required string name = 2;
+}
+
+message PhoneVoiceCallStatus {
+    enum PhoneVoiceCallState {
+        PHONE_VOICE_CALL_STATE_NONE = 0;
+        PHONE_VOICE_CALL_STATE_INCOMING = 1;
+        PHONE_VOICE_CALL_STATE_ALERTING = 2;
+        PHONE_VOICE_CALL_STATE_ACTIVE = 3;
+    }
+
+    required io.bluewavestudio.openautopro.api.PhoneVoiceCallStatus.PhoneVoiceCallState state = 1;
+    required string caller_id = 2;
+    required string caller_name = 3;
+}
