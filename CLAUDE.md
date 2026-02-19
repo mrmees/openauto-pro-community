@@ -1,35 +1,36 @@
 # OpenAuto Prodigy — Project Context
 
-## Project Direction (Updated 2026-02-16)
+## Role
 
-**This project has shifted from reverse-engineering/patching to a full clean-room rebuild.**
+**This is the reference/spec repo.** It holds recovered assets and research from the original OpenAuto Pro. The active implementation lives in the sibling repo `../openauto-prodigy/`.
 
-The new project is called **OpenAuto Prodigy** — a complete open-source replacement for OpenAuto Pro, built from scratch on a modern stack. The recovered QML, protobuf API, icons, and manual serve as specification, not literal code.
+Use this repo to answer "what did OAP do?" and "how did OAP do it?" — not to write new code.
 
-**Design document:** `docs/plans/2026-02-16-openauto-prodigy-design.md` — READ THIS FIRST.
+**GitHub:** https://github.com/mrmees/openauto-pro-community
 
-**Next step:** Create implementation plan for Phase 1 (skeleton + Android Auto). Use the `writing-plans` skill.
+## What's Useful Here
 
-**GitHub:** https://github.com/mrmees/openauto-pro-community (current repo — new `openauto-prodigy` repo to be created when implementation starts)
+- **`original/qml/`** — 162 QML files: the complete UI spec (screens, navigation, components, settings)
+- **`original/images/`** — 88 SVG icons
+- **`original/proto/Api.proto`** — Plugin API definition (Prodigy targets backward compatibility)
+- **`original/scripts/`** — System-level scripts (hotspot, cursor, RTC, splash)
+- **`docs/plans/`** — Design doc and Phase 1 implementation plan
 
-## Key Decisions
+## Firmware Analysis (AAP Protocol Ground Truth)
 
-- **Clean-room rebuild** using recovered assets as spec, not code
-- **Qt 6.8 / C++17 / CMake** on RPi OS Trixie (Debian 13, 64-bit)
-- **SonOfGib's aasdk** as git submodule for AA protocol (includes WiFi fix)
-- **Fully independent** — don't fork opencardev/openauto or openDsh/dash (use as reference only)
-- **Plugin API:** 100% backward-compatible with BlueWave's published API (TCP + protobuf)
-- **Config:** INI format backward-compatible with OAP's `openauto_system.ini`
-- **Target hardware:** Raspberry Pi 4 (primary), Pi 5 (secondary)
-- **Test hardware:** Pi 4 + DFRobot 7" 1024x600 capacitive touchscreen (HDMI + USB)
-- **License:** GPLv3
+- **`docs/alpine-ilx-w650bt-firmware-analysis.md`** — Alpine iLX-W650BT: Google "tamul" AAP SDK v1.4.1 on bare-metal RTOS (Toshiba TMM9200). XML attribute paths, protobuf enums, state machines, keycodes.
+- **`docs/kenwood-dnx-firmware-analysis.md`** — Kenwood DNX/DDX: Newer Google `libreceiver-lib.so` on Linux (Telechips TCC8971). Significantly more protocol coverage: radio tuner, notifications, instrument cluster, split-screen, HD Radio, comprehensive vehicle sensors, media browser, VoiceSession, NavigationNextTurn. Also documents JK proxy architecture, AOAP transport, VNC AAPHID SDK, GStreamer audio.
+- **`docs/sony-xav-firmware-analysis.md`** — Sony XAV-AX100: Google AAP Receiver Library / GAL Protocol on Linux (Sunplus SPHE8388 "Gemini"). Firmware decrypted via keys from Sony's GPL U-Boot source. Most complete service catalog of all analyzed units: 30+ GAL service types, complete AA config XML, Android Binder IPC on embedded Linux, debug symbols in shared libraries.
+- **`docs/pioneer-dmh-firmware-analysis.md`** — Pioneer DMH-WT8600NEX: Fully encrypted `.avh` container (AES + RSA-2048). No extraction possible, but documents firmware format, cross-model comparison, and encryption analysis.
 
-## Build Phases
+Alpine and Kenwood analyses were created from `strings` analysis only — no decompilation. Sony was decrypted using keys derived from GPL source code. Pioneer firmware remains fully encrypted. The Sony SDK has the most complete service catalog, while the Kenwood SDK has the broadest protobuf message coverage.
 
-1. **Skeleton + Android Auto** — Qt 6 app boots, wired/wireless AA works, basic UI, PipeWire audio
-2. **Audio + Bluetooth** — A2DP, HFP, PBAP, music player, equalizer
-3. **System Integration** — plugin API, app launcher, camera, sensors, hotspot, keyboard
-4. **Extended Features** — mirroring, OBD-II, FM radio, wallpaper
+## Historical (already distilled into Prodigy's CLAUDE.md)
+
+- `docs/reverse-engineering-notes.md` — Full RE findings
+- `docs/abi-compatibility-analysis.md` — Binary patching analysis (abandoned approach)
+- `docs/android-auto-fix-research.md` — AA 12.7+ bug research (fixed by SonOfGib's aasdk)
+- `tools/` — One-time extraction scripts, already run
 
 ## File Locations
 
@@ -89,6 +90,34 @@ This work informed the design but is no longer the active focus. Key findings pr
 |--------|--------|---------|
 | autoapp | 0x5c1378 | Serialized FileDescriptorProto (Api.proto, 6700 bytes) |
 | libaasdk_proto.so | 0x132c74 | `WirelessMessage::WIRELESS_CREDENTIALS_REQUEST` enum (value: 2, should be 0x8001) |
+
+## Workflow Reminder
+
+When starting work on a new section/task, always do a quick web search for:
+- New or updated MCP servers/skills/tools relevant to the current work
+- Updated documentation for libraries being used (aasdk, Qt 6, Boost.ASIO, etc.)
+- Community developments (GitHub issues, forks, PRs) on relevant projects
+
+This prevents building on stale information and catches improvements we might otherwise miss.
+
+## AA Protocol Reference Loading
+
+A comprehensive Android Auto protocol reference (2100+ lines) is available at
+`../../reference/android-auto-protocol.md`. Load relevant sections based on current work:
+
+| Work Area | Sections to Load |
+|-----------|-----------------|
+| Wireless connection | 1-4 (protocol overview, wireless flow, BT profiles, Pi hardware) |
+| Channel implementation | 1 + 5 (protocol overview + channel architecture) |
+| Audio work | 1 + 5 (audio parts) + 6 (wireless audio pipeline) |
+| Debugging connection failures | 1 + 2 + 7 (protocol + wireless flow + breaking changes) |
+| Hardware/config | 4 (Pi radio constraints) |
+| Checking for updates | 8 (freshness check resources) |
+| Full context (rare) | All sections |
+
+The reference includes exact message IDs, proto field names, wire format diagrams, and
+handshake sequences verified against SonOfGib's aasdk source code. When in doubt, the
+reference cites source files — check those for the latest truth.
 
 ## Technical Notes
 
