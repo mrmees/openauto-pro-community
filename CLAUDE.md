@@ -102,7 +102,7 @@ This prevents building on stale information and catches improvements we might ot
 
 ## AA Protocol Reference Loading
 
-A comprehensive Android Auto protocol reference (2100+ lines) is available at
+A comprehensive Android Auto protocol reference (2200+ lines) is available at
 `../../reference/android-auto-protocol.md`. Load relevant sections based on current work:
 
 | Work Area | Sections to Load |
@@ -113,6 +113,7 @@ A comprehensive Android Auto protocol reference (2100+ lines) is available at
 | Debugging connection failures | 1 + 2 + 7 (protocol + wireless flow + breaking changes) |
 | Hardware/config | 4 (Pi radio constraints) |
 | Checking for updates | 8 (freshness check resources) |
+| Production SDK services / protocol gaps | 10 (firmware analysis synthesis) |
 | Full context (rare) | All sections |
 
 The reference includes exact message IDs, proto field names, wire format diagrams, and
